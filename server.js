@@ -57,6 +57,9 @@ let timeLeft = defaultTime;
 let turnPhase = 'waiting'; // waiting | countdown | running | paused | timeUp
 let currentRadical = "水"; 
 let usedWords = [];
+let randomStudentEnabled = false;
+const RANDOM_SELECTION_SPIN_MS = 3600;
+const RANDOM_SELECTION_HOLD_MS = 1700;
 let gameStarted = false;  // [新增] 遊戲是否已由老師正式開始
 let eliminatedPlayers = []; // [新增] 已被淘汰的玩家名單
 
@@ -68,11 +71,12 @@ function broadcastGameState() {
     playersMap: playersMap,
     currentName: currentName,
     currentRadical: currentRadical,
-    usedWords: usedWords,
+    usedWords: usedWords.slice(),
     defaultTime: defaultTime,
     timeLeft: timeLeft,
     turnPhase: turnPhase,
     timerRunning: turnPhase === 'running',
+    randomStudentEnabled: randomStudentEnabled,
     gameStarted: gameStarted  // [新增] 廣播遊戲狀態
   });
 }
@@ -142,6 +146,68 @@ function startTimer() {
       broadcastGameState();
     }
   }, 1000);
+}
+
+function pickRandomStudentForTurn(excludeName = null) {
+  if (playerOrder.length === 0) return null;
+  const candidates = playerOrder
+    .map((name, index) => ({ name, index }))
+    .filter(candidate => playerOrder.length <= 1 || candidate.name !== excludeName);
+  const selected = candidates[Math.floor(Math.random() * candidates.length)];
+  currentPlayerIndex = selected.index;
+  return playerOrder[currentPlayerIndex];
+}
+
+function beginRandomSelection(excludeName = null) {
+  const selectedName = pickRandomStudentForTurn(excludeName);
+  stopTurnTimer('selecting');
+  broadcastGameState();
+  io.emit('randomSelectionStart', {
+    playerOrder: playerOrder,
+    selectedName: selectedName,
+    selectedIndex: currentPlayerIndex,
+    duration: RANDOM_SELECTION_SPIN_MS,
+    holdDuration: RANDOM_SELECTION_HOLD_MS
+  });
+  return RANDOM_SELECTION_SPIN_MS + RANDOM_SELECTION_HOLD_MS;
+}
+
+function beginCountdownBeforeTimer() {
+  stopTurnTimer('countdown');
+  broadcastGameState();
+  io.emit('countdownStart', { steps: ['3', '2', '1', 'GO'], interval: 900 });
+  countdownTimer = setTimeout(() => {
+    countdownTimer = null;
+    if (!gameStarted || turnPhase !== 'countdown') return;
+    startTimer();
+    console.log('Timer started after countdown');
+  }, 3600);
+}
+
+function beginSelectionOrCountdownBeforeTimer() {
+  if (randomStudentEnabled && playerOrder.length > 1) {
+    const totalDelay = beginRandomSelection();
+    countdownTimer = setTimeout(() => {
+      countdownTimer = null;
+      if (!gameStarted || turnPhase !== 'selecting') return;
+      beginCountdownBeforeTimer();
+    }, totalDelay);
+    return;
+  }
+  beginCountdownBeforeTimer();
+}
+
+function beginSelectionOrTimerForNextTurn(excludeName = null) {
+  if (randomStudentEnabled && playerOrder.length > 1) {
+    const totalDelay = beginRandomSelection(excludeName);
+    countdownTimer = setTimeout(() => {
+      countdownTimer = null;
+      if (!gameStarted || turnPhase !== 'selecting') return;
+      startTimer();
+    }, totalDelay);
+    return;
+  }
+  startTimer();
 }
 
 io.on('connection', (socket) => {
@@ -269,15 +335,21 @@ io.on('connection', (socket) => {
         return;
       }
 
-      if (!isPass) {
-        if (currentPlayerIndex >= playerOrder.length) currentPlayerIndex = 0;
-      } else {
-        currentPlayerIndex = (currentPlayerIndex + 1) % playerOrder.length;
+      if (!randomStudentEnabled) {
+        if (!isPass) {
+          if (currentPlayerIndex >= playerOrder.length) currentPlayerIndex = 0;
+        } else {
+          currentPlayerIndex = (currentPlayerIndex + 1) % playerOrder.length;
+        }
       }
 
       io.emit('clearCanvas');
-      broadcastGameState();
-      startTimer();
+      if (randomStudentEnabled) {
+        beginSelectionOrTimerForNextTurn(currentName);
+      } else {
+        broadcastGameState();
+        startTimer();
+      }
     }, 2800);
   });
   
@@ -326,6 +398,8 @@ io.on('connection', (socket) => {
     if (turnPhase !== 'waiting') return;
     removeOfflinePlayersFromActiveGame();
     if (playerOrder.length === 0) return;
+    beginSelectionOrCountdownBeforeTimer();
+    /*
     stopTurnTimer('countdown');
     broadcastGameState();
     io.emit('countdownStart', { steps: ['3', '2', '1', 'GO'], interval: 900 });
@@ -335,10 +409,17 @@ io.on('connection', (socket) => {
       startTimer();
       console.log('⏱️ 倒數結束，正式開始計時！');
     }, 3600);
+    */
     console.log('⏳ 老師手動開始倒數。');
   });
 
   // [修改] 老師重置遊戲：清除玩家名單，讓學生重新加入大廳
+  socket.on('toggleRandomStudent', () => {
+    if (role !== 'teacher') return;
+    randomStudentEnabled = !randomStudentEnabled;
+    broadcastGameState();
+  });
+
   socket.on('resetGame', () => {
     stopTurnTimer('waiting');
     gameStarted = false;

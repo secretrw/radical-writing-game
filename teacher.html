@@ -26,8 +26,10 @@
     
     /* 畫布改由 JS 縮放以支援 HiDPI */
     #gameCanvas { background-color: white; border: 4px solid #2196f3; border-radius: 10px; }
-    .word-cloud { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 10px; }
+    .word-cloud { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-content: flex-start; margin-top: 10px; }
     .word-tag { background: #e0f7fa; color: #006064; padding: 5px 10px; font-size: 1.2em; border-radius: 5px; }
+    .word-bank-panel { height: 500px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+    .word-bank-panel #wordHistory { flex: 1; min-height: 0; overflow-y: auto; justify-content: flex-start; padding: 4px; box-sizing: border-box; overscroll-behavior: contain; }
 
     /* 原有烏鴉動畫 */
     .crows-wrapper { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; pointer-events: none; }
@@ -124,6 +126,54 @@
       font-weight: bold;
     }
     .btn-start-timer:disabled { background: #aaa; box-shadow: none; animation: none; cursor: not-allowed; }
+    .btn-random-student {
+      background: linear-gradient(135deg, #546e7a, #263238);
+      color: white; font-size: 16px; padding: 11px 18px;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,0.35);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+    }
+    .btn-random-student.on {
+      background: linear-gradient(135deg, #00acc1, #00695c);
+      box-shadow: 0 4px 18px rgba(0,172,193,0.5);
+    }
+    .answer-stage { position: relative; line-height: 0; background: #fff; }
+    .random-select-panel {
+      position: absolute; inset: 0; z-index: 5;
+      display: none; align-items: center; justify-content: center; flex-direction: column;
+      background: radial-gradient(circle, rgba(255,248,225,0.96), rgba(230,81,0,0.9));
+      border: 4px solid #ffb300; border-radius: 10px;
+      box-sizing: border-box; color: #fff; text-align: center;
+      overflow: hidden;
+    }
+    .random-select-panel.active { display: flex; }
+    .random-select-panel::before {
+      content: ""; position: absolute; inset: -40%;
+      background: repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 16px, transparent 16px 32px);
+      animation: slotScan 0.45s linear infinite;
+    }
+    .random-select-label {
+      position: relative; z-index: 1; font-size: 1rem; font-weight: 900;
+      letter-spacing: 0.14em; text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .random-select-name {
+      position: relative; z-index: 1; min-width: 260px; max-width: 340px;
+      margin-top: 18px; padding: 16px 20px;
+      background: rgba(0,0,0,0.72); border: 3px solid rgba(255,255,255,0.8);
+      border-radius: 8px; font-size: 3rem; line-height: 1.1; font-weight: 1000;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      box-shadow: inset 0 0 18px rgba(255,255,255,0.18), 0 10px 28px rgba(0,0,0,0.32);
+      animation: slotNamePulse 0.16s ease-in-out infinite;
+    }
+    .random-select-panel.selected .random-select-name {
+      color: #fff176; border-color: #fff176; animation: slotWinner 0.75s ease-out both;
+    }
+    @keyframes slotScan { from { transform: translateX(-40px); } to { transform: translateX(40px); } }
+    @keyframes slotNamePulse { 50% { transform: translateY(-2px) scale(1.02); } }
+    @keyframes slotWinner {
+      0% { transform: scale(0.85); }
+      45% { transform: scale(1.12); }
+      100% { transform: scale(1); }
+    }
     @keyframes pulseGlow {
       0%, 100% { box-shadow: 0 4px 15px rgba(255,111,0,0.5); transform: scale(1); }
       50% { box-shadow: 0 4px 30px rgba(255,111,0,0.9); transform: scale(1.04); }
@@ -216,7 +266,7 @@
       <div>
         <div style="font-size:1.05em; color:#ffd54f; font-weight:bold; margin-bottom:8px;">學生掃描 QR code 加入</div>
         <div id="joinUrlText" class="join-url">產生加入連結中...</div>
-        <button id="btnCopyJoinUrl" class="btn-copy-join">複製學生加入連結</button>
+        <button id="btnCopyJoinUrl" class="btn-copy-join">複製網址</button>
       </div>
     </div>
     <div style="font-size:1em; color:#b0bec5;">目前已加入的學生：</div>
@@ -241,6 +291,7 @@
         <div style="display:flex; align-items:center; justify-content:center; gap:18px; flex-wrap:wrap; padding-bottom:12px; margin:0 12px 12px; border-bottom:1px solid rgba(255,255,255,0.25);">
           <div style="font-size:1.1em; font-weight:bold; letter-spacing:0.03em;">⚙️ 確認設定後按開始計時</div>
           <button id="btnStartTimerNow" class="btn-start-timer">▶ 開始計時</button>
+          <button id="btnToggleRandomStudent" class="btn-random-student">隨機選取學生：Off</button>
         </div>
 
         <!-- 三欄列：與 gameGrid 完全同寬同比例 -->
@@ -333,11 +384,17 @@
             <div style="font-size:0.85em; color:#3949ab; font-weight:bold;">學生作答畫面 <span style="font-size:0.82em; font-weight:normal; color:#5c6bc0;">(即時轉播)</span></div>
             <div id="currentTurnBadge" class="player-turn-badge waiting">等待中...</div>
           </div>
-          <canvas id="gameCanvas" style="display:block;"></canvas>
+          <div class="answer-stage">
+            <canvas id="gameCanvas" style="display:block;"></canvas>
+            <div id="randomSelectPanel" class="random-select-panel">
+              <div class="random-select-label">隨機抽選中</div>
+              <div id="randomSelectName" class="random-select-name">---</div>
+            </div>
+          </div>
         </div>
 
         <!-- 右欄 (320px)：已上榜字庫 -->
-        <div style="background:#ffffff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:14px; overflow-y:auto;">
+        <div class="word-bank-panel" style="background:#ffffff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.1); padding:14px;">
           <h3 style="margin:0 0 10px; color:#e53935; font-size:0.95em; border-bottom:2px solid #ffccbc; padding-bottom:7px;">🌟 已上榜字庫</h3>
           <div id="wordHistory" class="word-cloud"></div>
         </div>
@@ -397,14 +454,39 @@
     const currentTurnBadge = document.getElementById('currentTurnBadge');
     const startTimerBanner = document.getElementById('startTimerBanner');
     const btnStartTimerNow = document.getElementById('btnStartTimerNow');
+    const btnToggleRandomStudent = document.getElementById('btnToggleRandomStudent');
+    const randomSelectPanel = document.getElementById('randomSelectPanel');
+    const randomSelectName = document.getElementById('randomSelectName');
     const joinQrImage = document.getElementById('joinQrImage');
     const joinUrlText = document.getElementById('joinUrlText');
     const btnCopyJoinUrl = document.getElementById('btnCopyJoinUrl');
     const countdownOverlay = document.getElementById('countdownOverlay');
     const countdownText = document.getElementById('countdownText');
     let waitingForTimer = false; // 控制開始計時橫幅的顯示
+    let randomSelectionSpinTimer = null;
+    let randomSelectionEndTimer = null;
+    let randomStudentEnabledLocal = false;
     let defaultTimeDisplay = 15;
+    let lastRenderedWordsKey = "";
     const studentJoinUrl = `${window.location.origin}/join`;
+
+    function renderWordHistory(words) {
+      const safeWords = Array.isArray(words) ? words : [];
+      const nextKey = safeWords.join("\u0001");
+      if (nextKey === lastRenderedWordsKey) return;
+      lastRenderedWordsKey = nextKey;
+
+      const fragment = document.createDocumentFragment();
+      safeWords.forEach(word => {
+        const span = document.createElement('span');
+        span.className = 'word-tag';
+        span.innerText = word;
+        fragment.appendChild(span);
+      });
+      wordHistory.textContent = "";
+      wordHistory.appendChild(fragment);
+      wordHistory.scrollTop = wordHistory.scrollHeight;
+    }
 
     function updateJoinQrCode() {
       joinUrlText.textContent = studentJoinUrl;
@@ -415,9 +497,9 @@
       try {
         await navigator.clipboard.writeText(studentJoinUrl);
         btnCopyJoinUrl.textContent = '已複製';
-        setTimeout(() => { btnCopyJoinUrl.textContent = '複製學生加入連結'; }, 1500);
+        setTimeout(() => { btnCopyJoinUrl.textContent = '複製網址'; }, 1500);
       } catch (err) {
-        prompt('請複製學生加入連結：', studentJoinUrl);
+        prompt('請複製網址：', studentJoinUrl);
       }
     });
     updateJoinQrCode();
@@ -520,6 +602,65 @@
       }
     }
 
+    function updateRandomStudentButton(enabled) {
+      randomStudentEnabledLocal = !!enabled;
+      btnToggleRandomStudent.textContent = `隨機選取學生：${enabled ? 'On' : 'Off'}`;
+      btnToggleRandomStudent.classList.toggle('on', !!enabled);
+    }
+
+    function clearRandomSelectionTimers() {
+      if (randomSelectionSpinTimer) clearTimeout(randomSelectionSpinTimer);
+      if (randomSelectionEndTimer) clearTimeout(randomSelectionEndTimer);
+      randomSelectionSpinTimer = null;
+      randomSelectionEndTimer = null;
+    }
+
+    function hideRandomSelectionPanel() {
+      clearRandomSelectionTimers();
+      randomSelectPanel.classList.remove('active', 'selected');
+    }
+
+    function showRandomSelectionAnimation(data = {}) {
+      const names = Array.isArray(data.playerOrder)
+        ? data.playerOrder.map(name => String(name || '').trim()).filter(Boolean)
+        : [];
+      const selectedName = String(data.selectedName || names[0] || '').trim();
+      if (!names.length || !selectedName) return;
+
+      clearRandomSelectionTimers();
+      const label = randomSelectPanel.querySelector('.random-select-label');
+      label.textContent = '隨機抽選中';
+      randomSelectName.textContent = names[0];
+      randomSelectPanel.classList.add('active');
+      randomSelectPanel.classList.remove('selected');
+
+      const duration = Number(data.duration) > 0 ? Number(data.duration) : 2400;
+      const holdDuration = Number(data.holdDuration) > 0 ? Number(data.holdDuration) : 1700;
+      const start = Date.now();
+      let index = Math.max(0, Number(data.selectedIndex) || 0);
+
+      const spin = () => {
+        const elapsed = Date.now() - start;
+        const progress = Math.min(1, elapsed / duration);
+        randomSelectName.textContent = names[index % names.length];
+        playRandomSelectionTick(progress);
+        index++;
+        const delay = Math.min(430, 55 + Math.pow(progress, 2.2) * 375);
+        randomSelectionSpinTimer = setTimeout(spin, delay);
+      };
+      spin();
+
+      randomSelectionEndTimer = setTimeout(() => {
+        if (randomSelectionSpinTimer) clearTimeout(randomSelectionSpinTimer);
+        randomSelectionSpinTimer = null;
+        label.textContent = '選中學生';
+        randomSelectName.textContent = selectedName;
+        randomSelectPanel.classList.add('selected');
+        playRandomSelectionWinner();
+        randomSelectionEndTimer = setTimeout(hideRandomSelectionPanel, holdDuration);
+      }, duration);
+    }
+
     socket.on('drawing', (data) => {
       const prevWidth = ctx.lineWidth;
       ctx.lineWidth = data.width || 4;
@@ -539,10 +680,12 @@
     socket.on('clearCanvas', () => { ctx.clearRect(0, 0, CSS_CANVAS_SIZE, CSS_CANVAS_SIZE); });
 
     socket.on('gameState', (data) => {
+      updateRandomStudentButton(!!data.randomStudentEnabled);
       // [新增] 切換大廳/遊戲面板
       if (!data.gameStarted) {
         lobbyPanel.style.display = 'block';
         mainPanel.style.display = 'none';
+        hideRandomSelectionPanel();
         updateLobbyTeacher(data.playerOrder, data.playersMap);
         keepTeacherAtTop();
         return;
@@ -563,16 +706,11 @@
         waitingForTimer = false;
         startTimerBanner.style.display = 'none';
         btnStartTimerNow.disabled = true;
-        btnStartTimerNow.textContent = data.turnPhase === 'countdown' ? '倒數中...' : (data.turnPhase === 'running' ? '計時中...' : '▶ 開始計時');
+        btnStartTimerNow.textContent = data.turnPhase === 'selecting' ? '抽選中...' : (data.turnPhase === 'countdown' ? '倒數中...' : (data.turnPhase === 'running' ? '計時中...' : '▶ 開始計時'));
       }
 
       radicalDisplay.innerText = data.currentRadical;
-      wordHistory.innerHTML = "";
-      data.usedWords.forEach(word => {
-        const span = document.createElement('span');
-        span.className = 'word-tag'; span.innerText = word;
-        wordHistory.appendChild(span);
-      });
+      renderWordHistory(data.usedWords);
       wordInput.value = ""; 
       dictLink.href = "https://dict.revised.moe.edu.tw/search.jsp?md=1&word=";
       focusWordInputWithoutScroll();
@@ -598,6 +736,8 @@
     socket.on('timerPaused', () => { timerDisplay.innerText += " (學生已送出)"; stopTensionLoop(); });
     socket.on('timerResumed', () => { timerDisplay.innerText = timerDisplay.innerText.replace(" (學生已送出)", ""); startTensionLoop(); });
 
+    socket.on('randomSelectionStart', showRandomSelectionAnimation);
+
     socket.on('countdownStart', (data) => {
       waitingForTimer = false;
       startTimerBanner.style.display = 'none';
@@ -616,6 +756,11 @@
       playControlBGM();
       socket.emit('startGame');
       keepTeacherAtTop();
+    });
+
+    btnToggleRandomStudent.addEventListener('click', () => {
+      updateRandomStudentButton(!randomStudentEnabledLocal);
+      socket.emit('toggleRandomStudent');
     });
 
     // [新增] 手動開始計時按鈕 → 點擊後橫幅+設定整塊消失，只留三欄
@@ -752,6 +897,42 @@
     let bgmMode = 'off';
     const CONTROL_BGM_START = 4.2;
     const TENSION_BGM_SRC = tensionBgmAudio.getAttribute('src');
+
+    function playRandomSelectionTick(progress = 0) {
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(760 - progress * 220 + Math.random() * 80, now);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.start(now);
+      osc.stop(now + 0.085);
+    }
+
+    function playRandomSelectionWinner() {
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      const now = audioCtx.currentTime;
+      [523.25, 783.99, 1046.5].forEach((freq, idx) => {
+        const start = now + idx * 0.09;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = idx === 2 ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.exponentialRampToValueAtTime(idx === 2 ? 0.34 : 0.22, start + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
+        osc.connect(gain);
+        gain.connect(masterGain);
+        osc.start(start);
+        osc.stop(start + 0.46);
+      });
+    }
+
     tensionBgmAudio.loop = true;
     tensionBgmAudio.preload = 'auto';
     tensionBgmAudio.volume = 0;

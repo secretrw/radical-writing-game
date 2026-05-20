@@ -12,8 +12,9 @@
     #statusArea { margin-bottom: 10px; padding: 10px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     h2, h3 { margin: 5px 0; }
     .radical-title { font-size: 2em; color: #673ab7; font-weight: bold; margin: 10px 0; }
-    .word-cloud { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 10px; }
+    .word-cloud { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-content: flex-start; margin-top: 10px; }
     .word-tag { background: #e0f7fa; color: #006064; padding: 8px 15px; font-size: 1.5em; border-radius: 5px; font-weight: bold; border: 1px solid #b2ebf2; }
+    #wordHistory { max-height: 190px; overflow-y: auto; justify-content: flex-start; padding: 4px; box-sizing: border-box; overscroll-behavior: contain; }
     
     /* 3. 環形計時器樣式 */
     .timer-container { position: relative; width: 100px; height: 100px; margin: 0 auto; }
@@ -282,6 +283,25 @@
     const countdownOverlay = document.getElementById('countdownOverlay');
     const countdownText = document.getElementById('countdownText');
     let countdownRunId = 0;
+    let lastRenderedWordsKey = "";
+
+    function renderWordHistory(words) {
+      const safeWords = Array.isArray(words) ? words : [];
+      const nextKey = safeWords.join("\u0001");
+      if (nextKey === lastRenderedWordsKey) return;
+      lastRenderedWordsKey = nextKey;
+
+      const fragment = document.createDocumentFragment();
+      safeWords.forEach(word => {
+        const span = document.createElement('span');
+        span.className = 'word-tag';
+        span.innerText = word;
+        fragment.appendChild(span);
+      });
+      wordHistory.textContent = "";
+      wordHistory.appendChild(fragment);
+      wordHistory.scrollTop = wordHistory.scrollHeight;
+    }
     
     // 環形計時器設定
     const timerRadius = 40;
@@ -409,18 +429,14 @@
       isTimeUp = turnPhase === 'timeUp';
       isPaused = turnPhase === 'paused';
       maxTime = data.defaultTime;
-      if (turnPhase === 'waiting' || turnPhase === 'countdown') {
+      if (turnPhase === 'waiting' || turnPhase === 'countdown' || turnPhase === 'selecting') {
         resetTimerDisplay();
       } else if (typeof data.timeLeft === 'number') {
         renderTimer(turnPhase === 'timeUp' ? 0 : data.timeLeft);
       }
       
       radicalDisplay.innerText = `【 ${data.currentRadical} 】部`;
-      wordHistory.innerHTML = "";
-      data.usedWords.forEach(word => {
-        const span = document.createElement('span'); span.className = 'word-tag'; span.innerText = word;
-        wordHistory.appendChild(span);
-      });
+      renderWordHistory(data.usedWords);
       
       if (isMyTurn) {
         strokeHistory = []; 
