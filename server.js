@@ -121,6 +121,12 @@ function disconnectStudentSockets() {
   }
 }
 
+function emitClearCanvasBurst() {
+  io.emit('clearCanvas');
+  setTimeout(() => io.emit('clearCanvas'), 120);
+  setTimeout(() => io.emit('clearCanvas'), 420);
+}
+
 function startTimer() {
   // [新增] 只有在遊戲已開始後才啟動計時器
   if (!gameStarted) return;
@@ -358,6 +364,7 @@ io.on('connection', (socket) => {
     stopTurnTimer('waiting');
     currentRadical = newRadical;
     usedWords = [];
+    emitClearCanvasBurst();
     broadcastGameState();
     // [修改] 不自動開始計時，等老師手動按「開始計時」
   });
@@ -368,6 +375,7 @@ io.on('connection', (socket) => {
     const bank = RADICAL_BANK[level] || RADICAL_BANK.easy;
     currentRadical = bank[Math.floor(Math.random() * bank.length)];
     usedWords = [];
+    emitClearCanvasBurst();
     broadcastGameState();
     // [修改] 不自動開始計時，等老師手動按「開始計時」
   });
@@ -387,6 +395,7 @@ io.on('connection', (socket) => {
     stopTurnTimer('waiting');
     gameStarted = true;
     currentPlayerIndex = 0;
+    emitClearCanvasBurst();
     broadcastGameState();
     // ★ 不呼叫 startTimer()，等老師手動按「開始計時」
     console.log('🎮 遊戲進入主控台，等待老師開始計時。');
@@ -429,6 +438,7 @@ io.on('connection', (socket) => {
     eliminatedPlayers = []; // [新增] 清除淘汰名單
     playerOrder = [];
     playersMap = {};
+    emitClearCanvasBurst();
     io.emit('gameReset');
     disconnectStudentSockets();
     broadcastGameState();
@@ -445,6 +455,7 @@ io.on('connection', (socket) => {
     eliminatedPlayers = [];
     playerOrder = [];
     playersMap = {};
+    emitClearCanvasBurst();
     io.emit('fullReset'); // 通知所有學生清除姓名並重新加入
     setTimeout(disconnectStudentSockets, 250);
     broadcastGameState();
