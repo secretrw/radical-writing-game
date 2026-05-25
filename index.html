@@ -368,6 +368,7 @@
     let isMyTurn = false; let isTimeUp = false; let isPaused = false;
     let maxTime = 15;
     let strokeHistory = []; 
+    const MAX_UNDO_STATES = 5;
 
     brushSizeSlider.addEventListener('input', (e) => { ctx.lineWidth = e.target.value; });
 
@@ -380,7 +381,7 @@
 
     function saveState() {
       strokeHistory.push(canvas.toDataURL());
-      if (strokeHistory.length > 15) strokeHistory.shift(); 
+      if (strokeHistory.length > MAX_UNDO_STATES) strokeHistory.shift(); 
     }
 
     function startDrawing(e) {
@@ -491,7 +492,7 @@
 
     socket.on('clearCanvas', () => { 
       clearGameCanvas(); 
-      if(isMyTurn) strokeHistory = [];
+      strokeHistory = [];
     });
 
     socket.on('timeUpdate', (timeLeft) => {
@@ -539,7 +540,7 @@
     btnClear.addEventListener('click', () => { 
       if (!isMyTurn || isTimeUp || isPaused) return;
       saveState(); 
-      ctx.clearRect(0, 0, CSS_CANVAS_SIZE, CSS_CANVAS_SIZE);
+      clearGameCanvas();
       socket.emit('clearCanvas'); 
     });
     
@@ -547,9 +548,11 @@
       if (!isMyTurn || isTimeUp || isPaused) return;
       if (strokeHistory.length > 0) {
         const prevState = strokeHistory.pop();
+        const token = ++canvasRenderToken;
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, CSS_CANVAS_SIZE, CSS_CANVAS_SIZE);
+          if (token !== canvasRenderToken) return;
+          clearCanvasPixels();
           ctx.drawImage(img, 0, 0, CSS_CANVAS_SIZE, CSS_CANVAS_SIZE);
           socket.emit('syncCanvas', canvas.toDataURL());
         };
@@ -560,6 +563,7 @@
     btnSubmit.addEventListener('click', () => { 
       if (isMyTurn && !isTimeUp && !isPaused) {
         socket.emit('studentDone');
+        strokeHistory = [];
         btnSubmit.innerText = "已送出，等待老師...";
       }
     });

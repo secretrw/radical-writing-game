@@ -5,7 +5,9 @@ const { Server } = require('socket.io');
 const app = express();
 app.set('trust proxy', true);
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  maxHttpBufferSize: 8 * 1024 * 1024
+});
 
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
@@ -58,6 +60,7 @@ let turnPhase = 'waiting'; // waiting | countdown | running | paused | timeUp
 let currentRadical = "水"; 
 let usedWords = [];
 let randomStudentEnabled = false;
+let randomStudentPickCounts = {};
 const RANDOM_SELECTION_SPIN_MS = 3600;
 const RANDOM_SELECTION_HOLD_MS = 1700;
 let gameStarted = false;  // [新增] 遊戲是否已由老師正式開始
@@ -127,6 +130,22 @@ function emitClearCanvasBurst() {
   setTimeout(() => io.emit('clearCanvas'), 420);
 }
 
+function resetRandomStudentPickCounts() {
+  randomStudentPickCounts = {};
+}
+
+function syncRandomStudentPickCounts() {
+  const activeNames = new Set(playerOrder);
+  Object.keys(randomStudentPickCounts).forEach(name => {
+    if (!activeNames.has(name)) delete randomStudentPickCounts[name];
+  });
+  playerOrder.forEach(name => {
+    if (!Number.isFinite(randomStudentPickCounts[name])) {
+      randomStudentPickCounts[name] = 0;
+    }
+  });
+}
+
 function startTimer() {
   // [新增] 只有在遊戲已開始後才啟動計時器
   if (!gameStarted) return;
@@ -156,11 +175,16 @@ function startTimer() {
 
 function pickRandomStudentForTurn(excludeName = null) {
   if (playerOrder.length === 0) return null;
+  syncRandomStudentPickCounts();
   const candidates = playerOrder
     .map((name, index) => ({ name, index }))
     .filter(candidate => playerOrder.length <= 1 || candidate.name !== excludeName);
-  const selected = candidates[Math.floor(Math.random() * candidates.length)];
+  const pool = candidates.length ? candidates : playerOrder.map((name, index) => ({ name, index }));
+  const minPickCount = Math.min(...pool.map(candidate => randomStudentPickCounts[candidate.name] || 0));
+  const leastPicked = pool.filter(candidate => (randomStudentPickCounts[candidate.name] || 0) === minPickCount);
+  const selected = leastPicked[Math.floor(Math.random() * leastPicked.length)];
   currentPlayerIndex = selected.index;
+  randomStudentPickCounts[selected.name] = (randomStudentPickCounts[selected.name] || 0) + 1;
   return playerOrder[currentPlayerIndex];
 }
 
@@ -364,6 +388,7 @@ io.on('connection', (socket) => {
     stopTurnTimer('waiting');
     currentRadical = newRadical;
     usedWords = [];
+    resetRandomStudentPickCounts();
     emitClearCanvasBurst();
     broadcastGameState();
     // [修改] 不自動開始計時，等老師手動按「開始計時」
@@ -375,6 +400,7 @@ io.on('connection', (socket) => {
     const bank = RADICAL_BANK[level] || RADICAL_BANK.easy;
     currentRadical = bank[Math.floor(Math.random() * bank.length)];
     usedWords = [];
+    resetRandomStudentPickCounts();
     emitClearCanvasBurst();
     broadcastGameState();
     // [修改] 不自動開始計時，等老師手動按「開始計時」
@@ -395,6 +421,7 @@ io.on('connection', (socket) => {
     stopTurnTimer('waiting');
     gameStarted = true;
     currentPlayerIndex = 0;
+    resetRandomStudentPickCounts();
     emitClearCanvasBurst();
     broadcastGameState();
     // ★ 不呼叫 startTimer()，等老師手動按「開始計時」
@@ -426,6 +453,7 @@ io.on('connection', (socket) => {
   socket.on('toggleRandomStudent', () => {
     if (role !== 'teacher') return;
     randomStudentEnabled = !randomStudentEnabled;
+    resetRandomStudentPickCounts();
     broadcastGameState();
   });
 
@@ -436,6 +464,7 @@ io.on('connection', (socket) => {
     timeLeft = defaultTime;
     usedWords = [];
     eliminatedPlayers = []; // [新增] 清除淘汰名單
+    resetRandomStudentPickCounts();
     playerOrder = [];
     playersMap = {};
     emitClearCanvasBurst();
@@ -453,6 +482,7 @@ io.on('connection', (socket) => {
     timeLeft = defaultTime;
     usedWords = [];
     eliminatedPlayers = [];
+    resetRandomStudentPickCounts();
     playerOrder = [];
     playersMap = {};
     emitClearCanvasBurst();
